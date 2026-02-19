@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Ultimate List & HTML Integrity Tool</title>
+
+<style>
+#dsm-tool {
+  font-family: Arial;
+  background:#f4f6f9;
+  padding:20px;
+  border-radius:12px;
+  max-width:1100px;
+  margin:20px auto;
+  box-shadow:0 4px 20px rgba(0,0,0,0.08);
+}
+
+#dsm-tool textarea {
+  width:100%;
+  height:150px;
+  padding:10px;
+  border-radius:8px;
+  border:1px solid #ccc;
+  resize:vertical;
+  margin-bottom:10px;
+}
+
+#dsm-tool button {
+  background:#2563eb;
+  color:white;
+  padding:8px 14px;
+  border:none;
+  border-radius:6px;
+  margin:5px;
+  cursor:pointer;
+  font-weight:bold;
+}
+
+#dsm-tool button:hover { background:#1e40af; }
+
+.options {
+  background:#fff;
+  padding:10px;
+  border-radius:8px;
+  border:1px solid #ddd;
+  margin-bottom:10px;
+}
+
+.result-box {
+  padding:10px;
+  margin-top:10px;
+  border-radius:6px;
+}
+
+.match { background:#dcfce7; border-left:5px solid #16a34a; }
+.missing { background:#fee2e2; border-left:5px solid #dc2626; }
+.extra { background:#fff7ed; border-left:5px solid #ea580c; }
+.duplicate { background:#e0f2fe; border-left:5px solid #0284c7; }
+
+</style>
+</head>
+
+<body>
+
+<div id="dsm-tool">
+
+<h2>Ultimate List & HTML Integrity Tool</h2>
+
+<label>Input 1</label>
+<textarea id="input1"></textarea>
+
+<label>Input 2</label>
+<textarea id="input2"></textarea>
+
+<div class="options">
+<strong>Comparison Controls:</strong><br>
+<label><input type="checkbox" id="ignoreNumbers"> Ignore standalone numbers</label><br>
+<label><input type="checkbox" id="ignoreRoll" checked> Ignore roll / grade / ID</label><br>
+<label><input type="checkbox" id="ignoreParams" checked> Ignore URL parameters</label><br>
+<label><input type="checkbox" id="strictMode"> Strict comparison</label><br>
+<label><input type="checkbox" id="useHref"> Compare anchor HREF instead of text</label><br>
+<label><input type="checkbox" id="removeDuplicates"> Remove duplicates before compare</label><br>
+<label><input type="checkbox" id="sortBefore"> Sort lists before compare</label>
+</div>
+
+<button onclick="compare()">Compare</button>
+
+<div id="results"></div>
+
+<h3>Final Output</h3>
+<textarea id="finalOutput"></textarea>
+
+<button onclick="approve()">Approve Input 1</button>
+<button onclick="useSecond()">Approve Input 2</button>
+<button onclick="generateLi()">Generate &lt;li&gt;</button>
+<button onclick="generatePlain()">Generate Plain</button>
+<button onclick="mergeLists()">Auto Merge</button>
+
+</div>
+
+<script>
+
+function normalizeURL(url, strict){
+  url = url.replace(/^http:\/\//i, "https://");
+  url = url.replace(/\/index\.php$/i, "");
+  url = url.replace(/\/$/, "");
+  if(!strict) url = url.toLowerCase();
+  return url;
+}
+
+function cleanItem(item){
+
+  const ignoreNumbers = document.getElementById("ignoreNumbers").checked;
+  const ignoreRoll = document.getElementById("ignoreRoll").checked;
+  const ignoreParams = document.getElementById("ignoreParams").checked;
+  const strict = document.getElementById("strictMode").checked;
+
+  let value = item.replace(/<[^>]+>/g,'').trim();
+
+  if(ignoreParams) value = value.replace(/\?.*$/,'');
+  if(ignoreRoll) value = value.replace(/\b(roll|grade|class|id)\b.*$/i,'');
+
+  if(ignoreNumbers && /^\d+(\.\d+)?$/.test(value)) return "";
+
+  if(/^https?:\/\//i.test(value))
+    value = normalizeURL(value, strict);
+  else if(!strict)
+    value = value.toLowerCase();
+
+  return value.trim();
+}
+
+function extract(text){
+
+  let items = [];
+
+  const strict = document.getElementById("strictMode").checked;
+  const useHref = document.getElementById("useHref").checked;
+
+  const li = [...text.matchAll(/<li[^>]*>(.*?)<\/li>/gis)];
+  const td = [...text.matchAll(/<td[^>]*>(.*?)<\/td>/gis)];
+  const option = [...text.matchAll(/<option[^>]*>(.*?)<\/option>/gis)];
+  const anchor = [...text.matchAll(/<a[^>]*href=["'](.*?)["'][^>]*>(.*?)<\/a>/gis)];
+  const sitemap = [...text.matchAll(/<loc>(.*?)<\/loc>/gis)];
+  const urls = text.match(/https?:\/\/[^\s<>"']+/g);
+
+  if(li.length) items = li.map(m=>m[1]);
+  else if(td.length) items = td.map(m=>m[1]);
+  else if(option.length) items = option.map(m=>m[1]);
+  else if(anchor.length)
+    items = anchor.map(m=> useHref ? m[1] : m[2]);
+  else if(sitemap.length)
+    items = sitemap.map(m=>m[1]);
+  else if(urls) items = urls;
+  else items = text.split('\n');
+
+  return items.map(cleanItem).filter(Boolean);
+}
+
+function compare(){
+
+  let list1 = extract(document.getElementById("input1").value);
+  let list2 = extract(document.getElementById("input2").value);
+
+  const removeDup = document.getElementById("removeDuplicates").checked;
+  const sortBefore = document.getElementById("sortBefore").checked;
+
+  if(removeDup){
+    list1 = [...new Set(list1)];
+    list2 = [...new Set(list2)];
+  }
+
+  if(sortBefore){
+    list1.sort();
+    list2.sort();
+  }
+
+  const missing = list2.filter(x=>!list1.includes(x));
+  const extra = list1.filter(x=>!list2.includes(x));
+  const duplicates1 = list1.filter((x,i)=>list1.indexOf(x)!==i);
+  const duplicates2 = list2.filter((x,i)=>list2.indexOf(x)!==i);
+
+  const results = document.getElementById("results");
+  results.innerHTML = "";
+
+  results.innerHTML += `<div class="result-box match">
+  Input1: ${list1.length} | Input2: ${list2.length}
+  </div>`;
+
+  if(!missing.length && !extra.length)
+    results.innerHTML += `<div class="result-box match">✅ Perfect Match</div>`;
+
+  if(missing.length)
+    results.innerHTML += `<div class="result-box missing">
+    ❌ Missing:<br>${missing.join("<br>")}</div>`;
+
+  if(extra.length)
+    results.innerHTML += `<div class="result-box extra">
+    ⚠ Extra:<br>${extra.join("<br>")}</div>`;
+
+  if(duplicates1.length)
+    results.innerHTML += `<div class="result-box duplicate">
+    🔁 Duplicates in Input1:<br>${[...new Set(duplicates1)].join("<br>")}</div>`;
+
+  if(duplicates2.length)
+    results.innerHTML += `<div class="result-box duplicate">
+    🔁 Duplicates in Input2:<br>${[...new Set(duplicates2)].join("<br>")}</div>`;
+}
+
+function approve(){
+  finalOutput.value = input1.value;
+}
+
+function useSecond(){
+  finalOutput.value = input2.value;
+}
+
+function generateLi(){
+  const list = extract(input1.value);
+  finalOutput.value = list.map(x=>`<li>${x}</li>`).join("\n");
+}
+
+function generatePlain(){
+  const list = extract(input1.value);
+  finalOutput.value = list.join("\n");
+}
+
+function mergeLists(){
+  const merged = [...new Set([...extract(input1.value), ...extract(input2.value)])];
+  finalOutput.value = merged.join("\n");
+}
+
+</script>
+
+</body>
+</html>
